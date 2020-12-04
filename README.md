@@ -10,7 +10,8 @@
 1. `. reckoner/bin/activate`
 
 ## Install `reckoner`
-1. pip install reckoner
+1. `pip install reckoner`
+1. (Binary install also available, but it is flaky https://github.com/FairwindsOps/reckoner/releases/tag/v4.3.1)
 
 ## Run A Single Chart
 1. `reckoner plot course.yml --only redis-one` 
