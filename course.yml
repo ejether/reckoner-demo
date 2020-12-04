@@ -1,0 +1,198 @@
+---
+_references: {}
+namespace: demo
+repository: stable
+context: minikube
+repositories:
+  incubator:
+    url: https://charts.helm.sh/incubator
+  stable:
+    url: https://charts.helm.sh/stable
+  fairwinds-stable:
+    url: https://charts.fairwinds.com/stable
+  fairwinds-incubator:
+    url: https://charts.fairwinds.com/incubator
+  jetstack:
+    url: https://charts.jetstack.io
+  bitnami:
+    url: https://charts.bitnami.com/bitnami
+  eks:
+    url: https://aws.github.io/eks-charts
+  linkerd:
+    url: https://helm.linkerd.io/stable
+  git-helm-charts:
+    git: https://github.com/helm/charts
+    path: stable
+minimum_versions:
+  helm: 3.3.1
+  reckoner: 4.2.0
+namespace_management:
+  default:
+    metadata:
+      annotations:
+        ManagedBy: Reckoner
+        AppliedBy: ReckonerDemo
+      labels:
+        ManagedBy: Reckoner
+    settings:
+      overwrite: true
+# hooks:
+#   pre_install:
+#   - kubectl apply -f fw_priority_class_manifest.yaml
+#   - kubectl apply -f clusterroles/
+#   post_install:
+#   - kubectl apply -f rbac-definition.yml
+charts:
+  nginx-ingress:
+    chart: nginx-ingress
+    namespace: nginx-ingress
+    version: 1.36.3
+    values:
+      controller:
+        metrics:
+          enabled: 'true'
+        extraArgs:
+          update-status-on-shutdown: 'false'
+          default-ssl-certificate: nginx-ingress/wildcard-tls
+        podAnnotations:
+          ad.datadoghq.com/nginx-ingress-controller.check_names: |
+            ["prometheus", "nginx_ingress_controller"]
+          ad.datadoghq.com/nginx-ingress-controller.init_configs: |
+            [{}, {}]
+          ad.datadoghq.com/nginx-ingress-controller.instances: |
+            [
+              {
+                "prometheus_url": "http://%%host%%:10254/metrics",
+                "namespace": "ingress",
+                "metrics": ["nginx_ingress_controller_config_last_reload_successful"]
+              },
+              {
+                "prometheus_url": "http://%%host%%:10254/metrics"
+              }
+            ]
+        ingressClass: nginx-ingress
+        autoscaling:
+          enabled: true
+          minReplicas: 3
+          maxReplicas: 5
+          targetCPUUtilizationPercentage: 80
+          targetMemoryUtilizationPercentage: 80
+        minAvailable: 2
+        publishService.enabled: 'true'
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+          limits:
+            cpu: 100m
+            memory: 200Mi
+        service:
+          targetPorts.http: 80
+          externalTrafficPolicy: Cluster
+        podLabels.nginx-affinity: nginx-ingress
+        affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].key: nginx-affinity
+        affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].operator: In
+        affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].values[0]: nginx-ingress
+        affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey: kubernetes.io/hostname
+      defaultBackend:
+        resources:
+          requests:
+            cpu: 25m
+            memory: 25Mi
+          limits:
+            cpu: 25m
+            memory: 25Mi
+        name: default-backend
+        minAvailable: 1
+        replicaCount: 2
+        priorityClassName: fairwinds-critical
+      rbac:
+        create: 'true'
+  external-dns:
+    chart: external-dns
+    repository: bitnami
+    version: 2.22.1
+    namespace: external-dns
+    files: 
+    - external-dns-values.yml
+    - $EXTRA_EXTERNAL_DNS_FILE
+  cert-manager:
+    chart: cert-manager
+    version: v0.14.3
+    namespace: cert-manager
+    repository: jetstack
+    hooks:
+      pre_install:
+      - kubectl apply --validate=false -f https://raw.githubusercontent.com/jetstack/cert-manager/release-0.11/deploy/manifests/00-crds.yaml
+        && sleep 10
+    values:
+      ingressShim:
+        # Set these defaults to the most used issuer and validation method.
+        defaultIssuerKind: ClusterIssuer
+        # This avoids the ingress annotation cert-manager.io/cluster-issuer
+        # This should match a value from the letsencrypt-setup chart `clusterissuers.*.clusterIssuerName`.
+        defaultIssuerName: letsencrypt-prod
+      resources:
+        requests:
+          cpu: 50m
+          memory: 200Mi
+        limits:
+          cpu: 50m
+          memory: 200Mi
+      prometheus:
+        enabled: true
+      podAnnotations:
+        ad.datadoghq.com/cert-manager.check_names: |
+          ["prometheus"]
+        ad.datadoghq.com/cert-manager.init_configs: |
+          [{}]
+        ad.datadoghq.com/cert-manager.instances: |
+          [
+            {
+              "prometheus_url": "http://%%host%%:9402/metrics"\,
+              "namespace": "cert-manager"\,
+              "metrics": ["*"]\,
+              "max_returned_metrics": "1000"
+            }
+          ]
+  metrics-server:
+    chart: metrics-server
+    namespace: metrics-server
+    version: 4.2.0
+    repository: bitnami
+    values:
+      extraArgs:
+        kubelet-insecure-tls: true
+      apiService:
+        create: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 100Mi
+        limits:
+          cpu: 50m
+          memory: 100Mi
+  redis-one:
+    namespace: redis-one
+    namespace_management:
+      metadata:
+        annotations:
+          SpecialAnnotation: forRedisOne
+    chart: redis
+    repository: bitnami
+  redis-two:
+    namespace: redis-two
+    chart: redis
+    repository: bitnami
+    values:
+      password: $REDIS_TWO_PASSWORD
+  local-chart:
+    chart: foo
+    repository: ./
+  kibana-from-deprecated-github:
+    chart: kibana
+    repository: git-helm-charts
+    values:
+      plugins:
+        enabled: true
+
